@@ -1,63 +1,73 @@
-const puppeteer = require('puppeteer')
-const cheerio = require('cheerio');
-const mongoose = require('mongoose')
-const Listing = require('./model/Listing')
+const request = require("request-promise");
+const cheerio = require("cheerio");
 
-async function connectDb() {
-    await mongoose.connect('mongodb+srv://raf:test@cluster0.t5mzc.mongodb.net/craigslistDb?retryWrites=true&w=majority', { useNewUrlParser: true })
-    console.log("Connected to database")
+const url = "https://sfbay.craigslist.org/d/software-qa-dba-etc/search/sof";
+
+const scrapeSample = {
+  title: "Technical Autonomous Vehicle Trainer",
+  description:
+    "We're the driverless car company. We're building the world's best autonomous vehicles to safely connect people to the places, things, and experiences they care about.",
+  datePosted: new Date("2018-07-13"),
+  url:
+    "https://sfbay.craigslist.org/sfc/sof/d/technical-autonomous-vehicle/6642626746.html",
+  hood: "(SOMA / south beach)",
+  address: "1201 Bryant St.",
+  compensation: "23/hr"
+};
+
+const scrapeResults = [];
+
+async function scrapeJobHeader() {
+  try {
+    const htmlResult = await request.get(url);
+    const $ = await cheerio.load(htmlResult);
+
+    $(".result-info").each((index, element) => {
+      const resultTitle = $(element).children(".result-title");
+      const title = resultTitle.text();
+      const url = resultTitle.attr("href");
+      const datePosted = new Date(
+        $(element)
+          .children("time")
+          .attr("datetime")
+      );
+      const hood = $(element)
+        .find(".result-hood")
+        .text();
+      const scrapeResult = { title, url, datePosted, hood };
+      scrapeResults.push(scrapeResult);
+    });
+    return scrapeResults;
+  } catch (err) {
+    console.error(err);
+  }
 }
 
-async function scrapeListings(page) {
-    await page.goto('https://sfbay.craigslist.org/search/sof');
-    const html = await page.content()
-    const $ = cheerio.load(html)
-    // Get text
-    // $(".result-title").each((i, e) => console.log($(e).text()))
-    // Get attributes
-    // $(".result-title").each((i, e) => console.log($(e).attr("href")))
-    const listings = $(".result-info").map((i, e) => {
-        const titleElement = $(e).find(".result-title")
-        const timeElement = $(e).find(".result-date")
-        const hoodElement = $(e).find(".result-hood")
-
-        const title = $(titleElement).text()
-        const url = $(titleElement).attr("href")
-        const datePosted = new Date($(timeElement).attr("datetime"))
-        const neighborhood = $(hoodElement).text().trim().replace(/\(|\)/g, "")
-
-        return { title, url, datePosted, neighborhood }
-    }).get()
-    
-    return listings
+async function scrapeDescription(jobsWithHeaders) {
+  return await Promise.all(
+    jobsWithHeaders.map(async job => {
+      try {
+        const htmlResult = await request.get(job.url);
+        const $ = await cheerio.load(htmlResult);
+        $(".print-qrcode-container").remove();
+        job.description = $("#postingbody").text();
+        job.address = $("div.mapaddress").text();
+        const compensationText = $(".attrgroup")
+          .children()
+          .first()
+          .text();
+        job.compensation = compensationText.replace("compensation: ", "");
+        return job;
+      } catch (error) {
+        console.error(error);
+      }
+    })
+  );
 }
 
-async function scrapeJobDescription(listings, page) {
-    for (const listing of listings) {
-        await page.goto(listing.url)
-        const html = await page.content()
-        const $ = cheerio.load(html)
-        const jobDescription = $("#postingbody").text()
-        listing.jobDescription = jobDescription
-        listing.compensation = $("p.attrgroup > span:nth-child(1) > b").text()
-        console.log(listing.compensation)
-        const listingModel = new Listing(listing)
-        await listingModel.save()
-        await sleep(1000)
-    }
+async function scrapeCraigslist() {
+  const jobsWithHeaders = await scrapeJobHeader();
+  const jobsFullData = await scrapeDescription(jobsWithHeaders);
 }
 
-async function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function main() {
-    await connectDb()
-    const browser = await puppeteer.launch({ headless: false });
-    const page = await browser.newPage();
-    const listings = await scrapeListings(page)
-    const listingsWithJobDescription = await scrapeJobDescription(listings, page)
-    console.log(listings)
-}
-
-main()
+scrapeCraigslist();
