@@ -1,17 +1,17 @@
 {
-  "name": "craigslistwebscraper",
+  "name": "tdd-scraper",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest --watchAll"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "cheerio": "^1.0.0-rc.10",
-    "objects-to-csv": "^1.3.6",
+    "jest": "^28.1.0",
     "request": "^2.88.2",
     "request-promise": "^4.2.6"
   }
